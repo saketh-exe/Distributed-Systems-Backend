@@ -2,9 +2,14 @@ from flask import Flask, jsonify, request
 import socket
 import json
 from flask_cors import CORS
+from flask_socketio import SocketIO , emit
+from module5 import read_state, write_state
 
 app = Flask(__name__)
 CORS(app)
+socketio = SocketIO(app,cors_allowed_origins="*")
+
+
 # Configuration for the target socket server
 TARGET_HOST = "0.0.0.0"
 TARGET_PORT = 3000
@@ -91,6 +96,28 @@ def get_complaints():
             "status": "error",
             "message": str(e)
         }), 500
-if __name__ == '__main__':
-    # Run Flask on port 3001
-    app.run(host='0.0.0.0', port=3001, debug=True)
+
+@app.route('/prefs',methods= ['GET'])
+def get_prefs():
+    return jsonify(read_state())
+
+@app.route('/prefs',methods= ['POST'])
+def set_prefs():
+    data = request.get_json()
+    good = data.get('good',0)
+    mid = data.get('mid',0)
+    bad = data.get('bad',0)
+    write_state(good,mid,bad)
+    state = read_state()
+    socketio.emit('prefs_update',state)
+    return jsonify(state)
+    
+@socketio.on('connect')
+def handle_connect():
+    state = read_state()
+    emit('prefs_update',state)
+
+
+
+
+
