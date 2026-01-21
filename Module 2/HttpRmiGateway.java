@@ -10,10 +10,14 @@ public class HttpRmiGateway {
 
     public static void main(String[] args) throws Exception {
 
-        HttpServer server = HttpServer.create(new InetSocketAddress(3000), 0);
+        HttpServer server = HttpServer.create(new InetSocketAddress(3002), 0);
 
         // Endpoint: /room?no=101
         server.createContext("/room", exchange -> {
+            // Add CORS headers
+            exchange.getResponseHeaders().add("Access-Control-Allow-Origin", "*");
+            exchange.getResponseHeaders().add("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+            exchange.getResponseHeaders().add("Access-Control-Allow-Headers", "Content-Type");
 
             try {
                 String query = exchange.getRequestURI().getQuery(); // no=101
@@ -56,6 +60,11 @@ public class HttpRmiGateway {
 
         // Optional: endpoint to list all rooms
         server.createContext("/rooms", exchange -> {
+            // Add CORS headers
+            exchange.getResponseHeaders().add("Access-Control-Allow-Origin", "*");
+            exchange.getResponseHeaders().add("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+            exchange.getResponseHeaders().add("Access-Control-Allow-Headers", "Content-Type");
+
             try {
                 Registry registry = LocateRegistry.getRegistry("localhost", 1099);
                 HostelService service = (HostelService) registry.lookup("HostelService");
@@ -78,6 +87,6 @@ public class HttpRmiGateway {
         });
 
         server.start();
-        System.out.println("HTTP RMI Gateway running at http://localhost:3000");
+        System.out.println("HTTP RMI Gateway running at http://localhost:3002");
     }
 }

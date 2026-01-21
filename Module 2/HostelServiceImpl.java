@@ -22,7 +22,7 @@ public class HostelServiceImpl extends UnicastRemoteObject implements HostelServ
             return "Room not found";
         }
 
-        return "Room Number: " + room.roomNo +
+        return "Room_Number: " + room.roomNo +
                ", Occupants: " + room.occupants +
                ", Warden: " + room.wardenContact;
     }
