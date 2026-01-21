@@ -1,9 +1,10 @@
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, send_file
 import socket
 import json
 from flask_cors import CORS
 from flask_socketio import SocketIO , emit
 from module5 import read_state, write_state
+import requests
 
 app = Flask(__name__)
 CORS(app)
@@ -13,6 +14,16 @@ socketio = SocketIO(app,cors_allowed_origins="*")
 # Configuration for the target socket server
 TARGET_HOST = "0.0.0.0"
 TARGET_PORT = 3000
+
+# Configuration for Module 3 (Notice Board)
+MODULE3_HOST = "localhost"
+MODULE3_PORT = 5003
+MODULE3_BASE_URL = f"http://{MODULE3_HOST}:{MODULE3_PORT}"
+
+# Configuration for Module 4 (P2P Resource Sharing)
+MODULE4_HOST = "localhost"
+MODULE4_PORT = 5004
+MODULE4_BASE_URL = f"http://{MODULE4_HOST}:{MODULE4_PORT}"
 
 @app.route('/send-complaint', methods=['POST'])
 def send_complaint():
@@ -118,6 +129,187 @@ def handle_connect():
     emit('prefs_update',state)
 
 
+# ============================================================================
+# MODULE 3 - NOTICE BOARD ENDPOINTS
+# ============================================================================
+
+@app.route('/api/notices', methods=['GET'])
+def get_notices():
+    """Retrieve all notices from Module 3."""
+    try:
+        response = requests.get(
+            f"{MODULE3_BASE_URL}/api/notices",
+            timeout=5
+        )
+        return jsonify(response.json()), response.status_code
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "message": f"Failed to retrieve notices: {str(e)}"
+        }), 503
 
 
+@app.route('/api/notices', methods=['POST'])
+def create_notice():
+    """Create a new notice (forward to Module 3)."""
+    try:
+        data = request.get_json()
+        auth_header = request.headers.get('Authorization')
+        
+        headers = {}
+        if auth_header:
+            headers['Authorization'] = auth_header
+        
+        response = requests.post(
+            f"{MODULE3_BASE_URL}/api/notices",
+            json=data,
+            headers=headers,
+            timeout=5
+        )
+        return jsonify(response.json()), response.status_code
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "message": f"Failed to create notice: {str(e)}"
+        }), 503
 
+
+@app.route('/api/notices/<notice_id>', methods=['GET'])
+def get_notice(notice_id):
+    """Retrieve a specific notice."""
+    try:
+        response = requests.get(
+            f"{MODULE3_BASE_URL}/api/notices/{notice_id}",
+            timeout=5
+        )
+        return jsonify(response.json()), response.status_code
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "message": f"Failed to retrieve notice: {str(e)}"
+        }), 503
+
+
+@app.route('/api/notices/<notice_id>', methods=['DELETE'])
+def delete_notice(notice_id):
+    """Delete a notice."""
+    try:
+        auth_header = request.headers.get('Authorization')
+        headers = {}
+        if auth_header:
+            headers['Authorization'] = auth_header
+        
+        response = requests.delete(
+            f"{MODULE3_BASE_URL}/api/notices/{notice_id}",
+            headers=headers,
+            timeout=5
+        )
+        return jsonify(response.json()), response.status_code
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "message": f"Failed to delete notice: {str(e)}"
+        }), 503
+
+
+# ============================================================================
+# MODULE 4 - P2P RESOURCE SHARING ENDPOINTS
+# ============================================================================
+
+@app.route('/api/peers', methods=['GET'])
+def get_peers():
+    """Get list of all discovered peers."""
+    try:
+        response = requests.get(
+            f"{MODULE4_BASE_URL}/api/peers",
+            timeout=5
+        )
+        return jsonify(response.json()), response.status_code
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "message": f"Failed to retrieve peers: {str(e)}"
+        }), 503
+
+
+@app.route('/api/p2p/upload', methods=['POST'])
+def upload_p2p_file():
+    """Upload a file to P2P network."""
+    try:
+        if 'file' not in request.files:
+            return jsonify({
+                "status": "error",
+                "message": "No file provided"
+            }), 400
+
+        files = {'file': request.files['file']}
+        data = {'description': request.form.get('description', '')}
+
+        response = requests.post(
+            f"{MODULE4_BASE_URL}/api/p2p/upload",
+            files=files,
+            data=data,
+            timeout=30
+        )
+        return jsonify(response.json()), response.status_code
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "message": f"Failed to upload file: {str(e)}"
+        }), 503
+
+
+@app.route('/api/p2p/download/<peer_id>/<file_id>', methods=['GET'])
+def download_p2p_file(peer_id, file_id):
+    """Download a file from a peer."""
+    try:
+        response = requests.get(
+            f"{MODULE4_BASE_URL}/api/p2p/download/{peer_id}/{file_id}",
+            timeout=30,
+            stream=True
+        )
+        if response.status_code == 200:
+            return send_file(
+                response.raw,
+                mimetype=response.headers.get('content-type', 'application/octet-stream'),
+                as_attachment=True
+            )
+        else:
+            return jsonify(response.json()), response.status_code
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "message": f"Failed to download file: {str(e)}"
+        }), 503
+
+
+@app.route('/api/p2p/files', methods=['GET'])
+def list_p2p_files():
+    """List all files available on a peer."""
+    try:
+        response = requests.get(
+            f"{MODULE4_BASE_URL}/api/p2p/files",
+            timeout=5
+        )
+        return jsonify(response.json()), response.status_code
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "message": f"Failed to retrieve files: {str(e)}"
+        }), 503
+
+
+@app.route('/api/p2p/status', methods=['GET'])
+def get_p2p_status():
+    """Get P2P system status."""
+    try:
+        response = requests.get(
+            f"{MODULE4_BASE_URL}/api/p2p/status",
+            timeout=5
+        )
+        return jsonify(response.json()), response.status_code
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "message": f"Failed to retrieve P2P status: {str(e)}"
+        }), 503
