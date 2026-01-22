@@ -1,180 +1,338 @@
+# Distributed Systems Backend - Multi-Module Architecture
 
-# Hostel Assist – Distributed Systems Lab
+A distributed backend system implementing multiple communication paradigms including socket programming, RMI, HTTP, WebSocket, and REST APIs.
 
-## Purpose
-Single React frontend + multiple module implementations demonstrating different distributed communication models.  
-React communicates **only with the Flask API Gateway** for Modules 1, 3, 4, 5. Module 2 (Java RMI) is wrapped by a **separate Java HTTP server**; React calls that Java HTTP server directly.
+## 🏗️ System Architecture
 
-This README explains architecture, APIs, precise responsibilities, and explicit tasks for teammates.
+This project consists of 5 modules working together to provide a comprehensive distributed system:
 
----
-
-## Quick architecture
 ```
-React Frontend
-      |
-      |  HTTP (REST)          <-- React
-      v
-Flask API Gateway (wrapper.py)   <-- Hosts endpoints for Modules 1,3,4,5
-      |
-      +--> Module 1 (Python sockets)   - complaint 
-      +--> Module 3 (Python REST)      - notices 
-      +--> Module 4 (Python P2P agent) - peer 
-      +--> Module 5 (Python shared mem) - mess 
-
-React Frontend
-      |
-      |  HTTP (REST)
-      v
-Java HTTP wrapper -> Java RMI Module (Module 2)
+┌─────────────────────────────────────────────────────────────┐
+│                    Wrapper (Port 3001)                      │
+│                   Main API Gateway                          │
+│              Flask + SocketIO + Gunicorn                    │
+└───────────┬─────────────────────────────────────────────────┘
+            │
+            ├──► Module 1 (Port 3000) - Complaint Management
+            │    Socket Server (TCP)
+            │
+            ├──► Module 2 (Ports 1099, 3002) - Hostel Room Mgmt
+            │    RMI + HTTP Gateway
+            │
+            ├──► Module 3 (Integrated) - Notice Board
+            │    REST API (part of Wrapper)
+            │
+            ├──► Module 4 (Port 8765) - WebRTC Signaling
+            │    WebSocket Server
+            │
+            └──► Module 5 (Integrated) - Preference State
+                 Shared Memory (part of Wrapper)
 ```
 
----
+## 📦 Modules Overview
 
-## Folder structure (current)
-```
-.
-├── .venv/
-├── Module 1/
-├── Module 2/
-│   └── Rmi.java (plus a Java HTTP wrapper service to be added here)
-├── Module 3/
-│   └── main.py
-├── Module 4/
-│   └── main.py
-├── Module 5/
-│   └── main.py
-├── wrapper.py
-└── .gitignore
-```
----
+### **Module 1: Complaint Management System**
+- **Protocol**: TCP Socket Server
+- **Port**: `3000`
+- **Technology**: Python (socket programming)
+- **Functionality**: 
+  - Handles complaint submissions from users
+  - Stores complaints in `persistent.json`
+  - Provides complaint retrieval functionality
+  - Thread-safe file operations with locks
+- **Endpoints**:
+  - Send complaint (POST via socket)
+  - Get all complaints (GET via socket)
 
-## API Endpoints (wrapper-exposed)
-These are the endpoints React calls on the **Flask wrapper**.
+### **Module 2: Hostel Room Management**
+- **Protocols**: Java RMI + HTTP
+- **Ports**: 
+  - `1099` - RMI Registry
+  - `3002` - HTTP Gateway
+- **Technology**: Java (RMI, HttpServer)
+- **Components**:
+  1. **RMI Registry** (`port 1099`): Service discovery and binding
+  2. **RMI Server**: Core business logic for hostel room operations
+  3. **HTTP Gateway** (`port 3002`): HTTP-to-RMI bridge with CORS support
+- **Functionality**:
+  - Get room details by room number
+  - Add residents to rooms
+  - Get all residents in a room
+  - HTTP API wrapping RMI calls
+- **Sample Request**: 
+  ```bash
+  GET http://localhost:3002/room?no=101
+  ```
 
-### Complaints (Module 1 - socket server)
-- `POST /api/complaints`
-  - Body: `{ "room": "110", "category": "Water", "description": "No supply" }`
-  - Wrapper: send JSON to socket server, return `{ "ack": true, "id": "<ticketId>" }`
+### **Module 3: Notice Board (Integrated)**
+- **Protocol**: REST API
+- **Port**: `3001` (part of Wrapper)
+- **Technology**: Python (Flask Blueprint)
+- **Functionality**:
+  - Create, read, and delete notices
+  - Admin-only operations with Bearer token authentication
+  - In-memory storage per process
+- **Endpoints**:
+  - `GET /api/notices` - Get all notices
+  - `POST /api/notices` - Create notice (admin only)
+  - `GET /api/notices/<id>` - Get specific notice
+  - `DELETE /api/notices/<id>` - Delete notice (admin only)
+  - `GET /health` - Health check
 
-### Rooms (Module 2 - Java HTTP wrapper)
-- `GET /api/rooms/:roomNo`
-  - Wrapper: **Java HTTP server** receives request and internally calls Java RMI, returns JSON `{ roomNo, occupants:[], warden:{name,contact} }`
+### **Module 4: WebRTC Signaling Server**
+- **Protocol**: WebSocket
+- **Port**: `8765`
+- **Technology**: Python (websockets, asyncio)
+- **Functionality**:
+  - Peer-to-peer signaling for WebRTC connections
+  - Peer registration and discovery
+  - SDP offer/answer exchange
+  - ICE candidate exchange
+  - Real-time peer list broadcasting
+- **Message Types**:
+  - `register` - Register new peer
+  - `signal` - Forward WebRTC signals
+  - `peers_update` - Broadcast available peers
+  - `ping/pong` - Keep-alive mechanism
 
-### Notices (Module 3 - REST)
-- `GET  /api/notices` → list of notices
-- `POST /api/notices` → body `{ title, message, date }` to create notice
+### **Module 5: Preference State Manager (Integrated)**
+- **Protocol**: Shared Memory IPC
+- **Port**: `3001` (part of Wrapper)
+- **Technology**: Python (multiprocessing.shared_memory)
+- **Functionality**:
+  - Manages global preference state (good/mid/bad counts)
+  - Uses shared memory for inter-process communication
+  - Real-time updates via SocketIO
+- **Endpoints**:
+  - `GET /prefs` - Get current preferences
+  - `POST /prefs` - Update preferences
 
-### P2P Resource Sharing (Module 4 - P2P agent)
-- `GET  /api/peers`  
-- `POST /api/p2p/upload` (multipart/form-data)  
-- `GET  /api/p2p/download/:peerId/:fileName` → wrapper returns peer address or proxied stream
+### **Wrapper: Main API Gateway**
+- **Protocol**: HTTP + WebSocket (SocketIO)
+- **Port**: `3001`
+- **Technology**: Python (Flask, SocketIO, Gunicorn, Eventlet)
+- **Functionality**:
+  - Central entry point for all client requests
+  - Routes requests to appropriate modules
+  - Provides unified REST API
+  - Real-time updates via WebSocket
+  - CORS enabled for cross-origin requests
+- **Key Endpoints**:
+  - `POST /send-complaint` - Forward to Module 1
+  - `GET /get-complaints` - Forward to Module 1
+  - `GET /api/notices` - Module 3 endpoints
+  - `POST /api/notices` - Module 3 endpoints
+  - `GET /prefs` - Module 5 preferences
+  - `POST /prefs` - Update preferences
 
-### Mess Feedback (Module 5 - Shared Memory)
-- `POST /api/mess/:type`  where `type ∈ {good,avg,poor}`
-- `GET  /api/mess` → `{ good: N, avg: M, poor: K }`
+## 🚀 Quick Start
 
----
+### Prerequisites
 
-## What to implement — explicit tasks (per-module)
+- **Python 3.8+** (for Modules 1, 4, Wrapper)
+- **Java JDK 8+** (for Module 2)
+- **Linux/Unix** environment (for the start script)
 
+### Installation
 
-### Module 1 — Complaint (Python socket)
-- Implement a TCP server `Module1/main.py`:
-  - Accept multiple clients (threading or asyncio).
-  - Request/response format: JSON lines (`\n` delimited).
-  - Maintain `complaints = []` in memory; append `{id, room, category, desc, timestamp}`.
-  - Return acknowledgement: `{ ack: true, id }`.
-- Provide `Module1/test.py` to simulate client requests.
-- Flask wrapper tasks:
-  - Add endpoint `POST /api/complaints` that:
-    - Validates payload.
-    - Opens socket, sends JSON, reads ack, returns JSON to React.
-- To-do checklist:
-  - [ ] Define socket host/port in config.
-  - [ ] Unit test for concurrency (≥ 5 clients).
-  - [ ] Add optional `persistent.json` writer for checkpointing.
+1. **Clone the repository** (if applicable)
+   ```bash
+   cd /path/to/projectBack
+   ```
 
----
+2. **Install Python dependencies**
+   ```bash
+   pip install -r requirements.txt
+   ```
 
-### Module 2 — Room Info (Java RMI + Java HTTP wrapper)
-- Java RMI tasks:
-  - Implement RMI interface with at least 2 remote methods (e.g., `getRoomDetails(roomNo)`, `listRooms()`).
-  - In-memory `Map<Integer, RoomDetails>` populated with sample data.
-- Java HTTP wrapper:
-  - Create a small HTTP server (Jetty/Spark/embedded Tomcat) exposing `GET /api/rooms/:roomNo`.
-  - On request, call RMI method and return JSON.
-- To-do checklist:
-  - [ ] RMI server + registry script.
-  - [ ] Build/run instructions (`javac` & `java` or Maven/Gradle).
-  - [ ] Integration test: HTTP wrapper → RMI returns sample result.
+3. **Run the start script**
+   ```bash
+   ./start.sh
+   ```
 
----
+The script will automatically:
+- Start Module 1 (Complaints Socket Server)
+- Compile Java files for Module 2
+- Start RMI Registry
+- Start RMI Server
+- Start HTTP Gateway
+- Start Module 4 (WebRTC WebSocket Server)
+- Start Wrapper (Main API with Gunicorn)
 
-### Module 3 — Notice Board (Python REST)
-- Implement a REST microservice (`Module3/main.py`) or keep logic callable by wrapper.
-- In-memory `notices = []` with CRUD minimal (`GET`, `POST`).
-- Wrapper behavior:
-  - Either proxy React requests to Module3, or wrapper calls Module3 internal functions and returns results.
-- Tasks:
-  - [ ] Add validation for admin create route (simple flag).
-  - [ ] Provide sample UI payloads and curl commands.
+Each module runs in a separate terminal tab for easy monitoring.
 
----
+### Manual Start (Alternative)
 
-### Module 4 — P2P Resource Sharing (Python)
-- Peer agent:
-  - Each peer runs an HTTP server + transfer endpoint.
-  - Maintain `peers` list (addresses + metadata).
-- Wrapper responsibilities:
-  - `GET /api/peers` returns peers discovered by wrapper or bootstrap node.
-  - `POST /api/p2p/upload` registers file metadata and places file in local peer storage.
-  - `GET /api/p2p/download/:peerId/:fileName` returns URL or proxies the file stream.
-- Tasks:
-  - [ ] Implement peer discovery (simple bootstrap server or multicast).
-  - [ ] Support file chunking or streaming.
-  - [ ] Add upload/download test scripts.
+If you prefer to start modules manually:
 
----
-
-### Module 5 — Mess Feedback (Shared Memory)
-- Use `multiprocessing` shared memory or OS shared segment.
-- Protect counters with lock/semaphore.
-- API:
-  - `POST /api/mess/:type` increments counter atomically.
-  - `GET /api/mess` reads totals.
-- Tasks:
-  - [ ] Implement safe concurrent access tests.
-  - [ ] Add demo script that spawns multiple processes incrementing counters.
-
----
-
-## Run order (recommended for demo)
-1. Start Java RMI server (Module 2) and Java HTTP wrapper.
-2. Start Module 1 socket server.
-3. Start Module 3 REST service (if separate).
-4. Start Module 4 peer agent(s) (at least 2 peers for demo).
-5. Start Module 5 shared memory service (if separate).
-6. Start Flask API Gateway (`wrapper.py`).
-7. Start React frontend (development server or build served).
-
----
-
-## Sample curl requests
+**Terminal 1 - Module 1:**
 ```bash
-# Submit complaint (wrapper forwards to socket server)
-curl -X POST http://localhost:5000/api/complaints -H "Content-Type: application/json" \
-  -d '{"room":"110","category":"Water","description":"No supply"}'
-
-# Get room info (Java HTTP wrapper)
-curl http://localhost:8080/api/rooms/110
-
-# Get notices (via wrapper)
-curl http://localhost:5000/api/notices
-
-# Mess vote
-curl -X POST http://localhost:5000/api/mess/good
+cd "Module 1"
+python3 main.py
 ```
 
+**Terminal 2 - Module 2 (Compile):**
+```bash
+cd "Module 2"
+javac *.java
+```
 
+**Terminal 3 - Module 2 (RMI Registry):**
+```bash
+cd "Module 2"
+rmiregistry 1099
+```
 
+**Terminal 4 - Module 2 (RMI Server):**
+```bash
+cd "Module 2"
+java RMIServer
+```
+
+**Terminal 5 - Module 2 (HTTP Gateway):**
+```bash
+cd "Module 2"
+java HttpRmiGateway
+```
+
+**Terminal 6 - Module 4:**
+```bash
+cd "Module 4"
+python3 main.py
+```
+
+**Terminal 7 - Wrapper:**
+```bash
+gunicorn -k eventlet -w 1 wrapper:app --bind 0.0.0.0:3001
+```
+
+## 🔌 Port Reference
+
+| Module | Service | Port | Protocol |
+|--------|---------|------|----------|
+| Module 1 | Complaint Socket Server | 3000 | TCP Socket |
+| Module 2 | RMI Registry | 1099 | Java RMI |
+| Module 2 | HTTP Gateway | 3002 | HTTP |
+| Module 3 | Notice Board API | 3001 | HTTP (Integrated) |
+| Module 4 | WebRTC Signaling | 8765 | WebSocket |
+| Module 5 | Preference State | 3001 | HTTP (Integrated) |
+| **Wrapper** | **Main API Gateway** | **3001** | **HTTP + WebSocket** |
+
+## 📝 API Examples
+
+### Send a Complaint
+```bash
+curl -X POST http://localhost:3001/send-complaint \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "John Doe",
+    "issue": "AC not working",
+    "priority": "high",
+    "category": "maintenance"
+  }'
+```
+
+### Get Room Details
+```bash
+curl http://localhost:3002/room?no=101
+```
+
+### Get All Notices
+```bash
+curl http://localhost:3001/api/notices
+```
+
+### Create Notice (Admin)
+```bash
+curl -X POST http://localhost:3001/api/notices \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer admin_secret_key_12345" \
+  -d '{
+    "title": "Maintenance Notice",
+    "content": "Water supply will be off from 2-4 PM"
+  }'
+```
+
+### Get Preferences
+```bash
+curl http://localhost:3001/prefs
+```
+
+### Update Preferences
+```bash
+curl -X POST http://localhost:3001/prefs \
+  -H "Content-Type: application/json" \
+  -d '{"good": 10, "mid": 5, "bad": 2}'
+```
+
+## 🛠️ Technology Stack
+
+- **Python**: Flask, Flask-SocketIO, Gunicorn, Eventlet, WebSockets, AsyncIO
+- **Java**: RMI, HttpServer, Sockets
+- **Communication**: TCP Sockets, HTTP, WebSockets, RMI, Shared Memory
+- **Data Format**: JSON
+- **Server**: Gunicorn with Eventlet worker
+
+## 📂 Project Structure
+
+```
+projectBack/
+├── Module 1/
+│   ├── main.py              # Complaint socket server
+│   └── persistent.json      # Complaint storage
+├── Module 2/
+│   ├── HostelRoom.java      # Data class
+│   ├── HostelService.java   # RMI interface
+│   ├── HostelServiceImpl.java  # RMI implementation
+│   ├── RMIServer.java       # RMI server
+│   └── HttpRmiGateway.java  # HTTP to RMI bridge
+├── Module 4/
+│   └── main.py              # WebRTC signaling server
+├── wrapper.py               # Main API gateway
+├── module3_notice_board.py  # Notice board blueprint
+├── module5.py               # Preference state manager
+├── start.sh                 # Startup script
+├── requirements.txt         # Python dependencies
+└── README.md                # This file
+```
+
+## 🔒 Security Notes
+
+- Module 3 uses a simple Bearer token for admin authentication
+- Default admin token: `admin_secret_key_12345` (change in production)
+- CORS is enabled on all HTTP services for development
+- No encryption on socket connections (use SSL/TLS in production)
+
+## 🐛 Troubleshooting
+
+### Port Already in Use
+```bash
+# Find process using port
+lsof -i :3000
+# Kill process
+kill -9 <PID>
+```
+
+### Java Compilation Errors
+```bash
+# Ensure Java is installed
+java -version
+javac -version
+```
+
+### Python Module Not Found
+```bash
+# Reinstall requirements
+pip install -r requirements.txt
+```
+
+### RMI Server Not Binding
+Ensure `rmiregistry` is started before `RMIServer`
+
+## 📄 License
+
+This is an educational project for a Distributed Systems course.
+
+## 👥 Contributing
+
+This project is part of coursework for Semester 6 Distributed Systems.
