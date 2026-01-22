@@ -1,13 +1,19 @@
-from flask import Flask, jsonify, request
+from flask import Flask, Response, jsonify, request, send_file, stream_with_context
+import os
 import socket
 import json
 from flask_cors import CORS
 from flask_socketio import SocketIO , emit
 from module5 import read_state, write_state
+import requests
+from module3_notice_board import create_notice_board_blueprint
 
 app = Flask(__name__)
 CORS(app)
 socketio = SocketIO(app,cors_allowed_origins="*")
+
+# Mount Module 3 (Notice Board) directly into this server.
+app.register_blueprint(create_notice_board_blueprint())
 
 
 # Configuration for the target socket server
@@ -118,6 +124,7 @@ def handle_connect():
     emit('prefs_update',state)
 
 
-
-
-
+if __name__ == '__main__':
+    wrapper_host = os.environ.get('WRAPPER_HOST', '0.0.0.0')
+    wrapper_port = int(os.environ.get('WRAPPER_PORT', '3001'))
+    socketio.run(app, host=wrapper_host, port=wrapper_port, debug=True)
